@@ -107,6 +107,10 @@ val_data = gluon.data.DataLoader(
     batch_size=batch_size, shuffle=False, num_workers = num_workers)
 
 ```
+
+Network Architecture
+---------
+
 Now, we create two parallel convolutional networks for classifying category and colors
 ```r
 ## build category branch
@@ -169,7 +173,7 @@ with net1.name_scope():
 ```
 
 Please note that the network for color classification is quite shallow compared to the category one as learning category is tougher task than learning color.
-Next we initilaize parameters and tariner for the networks.
+Next we initilaize parameters and trainer for the networks.
 ```r
 net.collect_params().initialize(mx.init.Xavier(magnitude=2.24), ctx=ctx)
 net1.collect_params().initialize(mx.init.Xavier(magnitude=2.24), ctx=ctx)
@@ -180,3 +184,96 @@ trainer1 = gluon.Trainer(net1.collect_params(), 'sgd', {'learning_rate': .1})
 ```
 
 
+Training Loop
+---------
+```r
+
+epochs = 2
+smoothing_constant = .01
+moving_loss=0
+for e in range(epochs):
+    for i, (data, label) in enumerate(train_data):
+        n = label.shape[0]
+        label_category= label.copy()
+        label_color= label.copy()
+        for i in range(n):
+            label_category[i]=categoryLabels[label_category[i].asscalar()]
+            label_color[i]= colorLabels[label_color[i].asscalar()] 
+        with autograd.record():
+            output = net(data)
+            loss = softmax_cross_entropy(output, label_category)
+            output1 = net1(data)
+            loss1 = softmax_cross_entropy(output1, label_color)
+            loss2= loss+loss1
+        loss2.backward()
+        trainer.step(data.shape[0])
+        trainer1.step(data.shape[0])
+ 
+```
+
+Since we have a small dataset, we trained the network for few epochs only to avoid overfitting.
+
+Evaluation of the model
+---------
+
+We predicted color and category for the validation data and considered a positive classification only when
+both color and category were predicted correctly.
+```r
+def evaluate_accuracy(data_iterator, net, net1):
+    acc = mx.metric.Accuracy()
+    for i, (data, label) in enumerate(data_iterator):
+        n = label.shape[0]
+        label_category = label.copy()
+        label_color = label.copy()
+        for i in range(n):
+            label_category[i]=categoryLabels[label_category[i].asscalar()]
+            label_color[i]= colorLabels[label_color[i].asscalar()] 
+        output = net(data)
+        prob = mx.nd.softmax(output)
+        predictions = nd.argmax(prob, axis=1)
+        output1 = net1(data)
+        prob1 = mx.nd.softmax(output1)
+        predictions1 = nd.argmax(prob1, axis=1)
+        print(predictions)
+        print(predictions1)
+        for i in range(predictions.shape[0]):
+            key = str(int(predictions[i].asscalar()))+str(int(predictions1[i].asscalar()))
+            if key in combined_label_dict.keys():
+                predictions[i] = combined_label_dict[str(int(predictions[i].asscalar()))+str(int(predictions1[i].asscalar()))]
+            else:
+                predictions[i]=7
+        acc.update(preds=predictions, labels=label)
+    return acc.get()[1]
+```
+The training and validation accuracy were obtained as follows:
+```r 
+validation_accuracy = evaluate_accuracy(val_data,net, net1)
+train_accuracy = evaluate_accuracy(train_data,net, net1)
+print(validation_accuracy)
+print(train_accuracy)
+```    
+
+Output:
+validation_accuracy: 0.8905950095969289
+training_accuracy: 0.936
+
+Inference on an image
+---------
+```r
+from collections import namedtuple
+Batch = namedtuple('Batch', ['data'])
+#TODO add the image to S3
+filename = '/Users/khedia/Downloads/blue_jeans.JPG'
+img = mx.image.imread(filename)
+# apply default data preprocessing
+transformed_img = transform_test(img)
+transformed_img= transformed_img.reshape(1,3,96,96)
+pred = net(transformed_img)
+prob = mx.nd.softmax(pred)[0].asnumpy()
+category_idx = nd.argmax(pred, axis=1)
+pred1= net1(transformed_img)
+prob1 = mx.nd.softmax(pred1)[0].asnumpy()
+color_idx = nd.argmax(pred1, axis=1)
+
+##TODO add image alongwith the prediction labels 
+```
