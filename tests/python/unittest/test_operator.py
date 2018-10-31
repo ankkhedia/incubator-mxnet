@@ -768,6 +768,7 @@ def test_leaky_relu():
 # NOTE(haojin2): Skipping the numeric check tests for float16 data type due to precision issues,
 # the analytical checks are still performed on each and every data type to verify the correctness.
 @with_seed()
+@unittest.skip("Flaky test tracked by https://github.com/apache/incubator-mxnet/issues/12885")
 def test_prelu():
     def fprelu(x, gamma):
         pos_indices = x > 0
@@ -4762,6 +4763,29 @@ def test_quantization_op():
     assert same(qa.asnumpy(), qa_real.asnumpy())
     assert same(a_.asnumpy(),  a_real.asnumpy())
 
+@with_seed()
+def test_index_copy():
+    x = mx.nd.zeros((5,3))
+    t = mx.nd.array([[1,2,3],[4,5,6],[7,8,9]])
+    index = mx.nd.array([0,4,2], dtype=np.int64)
+
+    x.attach_grad()
+    t.attach_grad()
+    index.attach_grad()
+
+    with mx.autograd.record():
+        out = mx.nd.contrib.index_copy(x, index, t)
+    out.backward() 
+
+    tensor = mx.nd.array([[1,2,3],[0,0,0],[7,8,9],[0,0,0],[4,5,6]])
+    x_grad = mx.nd.array([[0,0,0],[1,1,1],[0,0,0],[1,1,1],[0,0,0]])
+    t_grad = mx.nd.array([[1,1,1],[1,1,1],[1,1,1]])
+    index_grad = mx.nd.array([0,0,0])
+
+    assert same(out.asnumpy(), tensor.asnumpy())
+    assert same(x.grad.asnumpy(), x_grad.asnumpy())
+    assert same(t.grad.asnumpy(), t_grad.asnumpy())
+    assert same(index.grad.asnumpy(), index_grad.asnumpy())
 
 @with_seed()
 def test_div_sqrt_dim():
@@ -5769,6 +5793,7 @@ def test_stack():
 
 
 @with_seed()
+@unittest.skip("Flaky test, tracked at https://github.com/apache/incubator-mxnet/issues/12314")
 def test_dropout():
     def zero_count(array, ratio):
         zeros = 0
