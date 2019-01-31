@@ -141,6 +141,24 @@ class MetricHandler(EventHandler):
         #self._estimator= estimator
         # estimator._train_stats = {"lr" : 0.1, "train_acc" : [0.85], "val_acc" :[0.99]}
         self._metric= estimator._metric
+        self._valdataloader = None
+
+    def evaluate_loss_and_metric(self, dataloader):
+        for (i,batch) in enumerate(dataloader):
+            X= batch.data
+            y= batch.label
+            y_pred = self._estimator._net(X)
+            ##replace this with custom function just as discussed
+            ## Also update val_loss things
+            for metrics in self._metric:
+                metrics.update(y_pred,y)
+
+        for metrics in self._metric:
+            metric_eval= metrics.get_name_value()
+            for name, val in metric_eval:
+                self._estimator._train_stats['val_'+ name].append(val)
+        ##what should be return type
+        return
 
     def train_begin(self):
         for metrics in self._metric:
@@ -158,7 +176,8 @@ class MetricHandler(EventHandler):
 
     def batch_end(self):
         ##if mapping doesnt exist raise error size(metrics) not equal to size(labels)
-        self._metric.update(self._estimator.y, self._estimator.y_hat)
+        for metrics in self._metric:
+            self._metric.update(self._estimator.y, self._estimator.y_hat)
 
     def epoch_begin(self):
         for metrics in self._metric:
@@ -166,13 +185,14 @@ class MetricHandler(EventHandler):
 
     def epoch_end(self):
         print("metrci")
-        metric_val = self._metric.get_name_value()
-        for name, val in metric_val:
-            self._estimator._train_stats[name].append(val)
-        print(self._estimator._train_stats)
+        for metrics in self._metric:
+            metric_val = metrics.get_name_value()
+            for name, val in metric_val:
+                self._estimator._train_stats[name].append(val)
+
         ##get validation metrics
         if self._estimator._epoch % self._estimator._evaluate_every == 0:
-            self._estimator.evaluate_loss_and_metric(val_data_loader)
+            self._estimator.evaluate_loss_and_metric(self._estimator._val_data_loader)
 
         ##move to earlystopping
         #if err_top1_val < best_val_score:

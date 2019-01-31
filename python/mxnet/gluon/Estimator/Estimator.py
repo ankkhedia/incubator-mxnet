@@ -61,18 +61,18 @@ class Estimator:
         label = gluon.utils.split_and_load(batch.label[0], ctx_list=ctx, batch_axis=0)
         return data, label
 
-    def evaluate_loss_and_metric(self, dataloader):
-        for (i,batch) in enumerate(dataloader):
-            X= batch.data
-            y= batch.label
-            y_pred = self._net(X)
-            ##replace this with custom function just as discussed
-            ## Also update val_loss thing
-            self._metric.update(y_pred,y)
-        metric_eval= self._metric.get_name_value()
-        for name, val in metric_eval:
-            self._train_stats['val_'+str(name)].append(val)
-        return metric_eval
+    #def evaluate_loss_and_metric(self, dataloader):
+    #    for (i,batch) in enumerate(dataloader):
+    #       X= batch.data
+    #        y= batch.label
+    #        y_pred = self._net(X)
+    #        ##replace this with custom function just as discussed
+    #        ## Also update val_loss thing
+    #        self._metric.update(y_pred,y)
+    #    metric_eval= self._metric.get_name_value()
+    #    for name, val in metric_eval:
+    #        self._train_stats['val_'+str(name)].append(val)
+    #    return metric_eval
 
 
     def fit(self, train_data_loader, val_data_loader, epochs,
@@ -83,6 +83,7 @@ class Estimator:
         if trainers is None:
             trainers = gluon.Trainer(self._net.collect_params(), 'sgd', {'learning_rate': 0.001})
         EventHandlers = [self.LoggingHandler, self.CheckpointHandler, self.MetricHandler]
+        self.MetricHandler._valdataloader= val_data_loader
         EventHandlers = EventHandlers + additionalHandlers
         exit_training = False
         #print(self._metric.get())
@@ -118,7 +119,7 @@ class Estimator:
                 self.y=batch.label
                 with autograd.record():
                     y_hat = self._net(X)
-                    l= self._lossfn(y_hat, y, weight= None)
+                    l= self._lossfn(y_hat, self.y, weight= None)
 
                 l.backward()
                 trainers.step(batch_size)
@@ -129,21 +130,17 @@ class Estimator:
                 for handlers in EventHandlers:
                     handlers.batch_end()
 
-                self._metric.update(self.y, self.y_hat)
-                break
-                # do something with train_stats
-                # train_stats.append[] similar to keras history
-                #test_acc = self.evaluate_accuracy(val_data_loader, net, ctx)
+
                 print("end of batch")
                 break
-            metric_val = metrics.get_name_value()
+            #metric_val = metrics.get_name_value()
             #print(train_metric_name)
             #print(train_metric_score)
 
             self._train_stats["epoch"].append(epoch)
             self._train_stats["lr"].append(trainers.learning_rate)
-            for name, val in metric_val:
-                self._train_stats[name].append(val)
+            #for name, val in metric_val:
+            #    self._train_stats[name].append(val)
             print(self._train_stats)
             ## how to do this for val
 
@@ -153,13 +150,13 @@ class Estimator:
             #      % (epoch + 1, train_l_sum / n, train_acc_sum / n, train_metric_score,
             #         time.time() - start))
 
-            if self._epoch % self._evaluate_every == 0:
-                self.evaluate_loss_and_metric(val_data_loader)
+            #if self._epoch % self._evaluate_every == 0:
+            #    self.evaluate_loss_and_metric(val_data_loader)
             for handlers in EventHandlers:
                 print(handlers)
                 handlers.epoch_end()
             self._epoch = epoch +1
-
+            print(self._train_stats)
         print ("completed epochs")
         self.plotting_fn()
         print("plots")
