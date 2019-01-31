@@ -21,7 +21,7 @@
 
 # from ...gluon import EventHandler
 
-from .EventHandler import LoggingHandler, CheckpointHandler
+from .EventHandler import LoggingHandler, CheckpointHandler, MetricHandler
 
 from ... import *
 from ... import gluon, autograd
@@ -30,15 +30,19 @@ import time
 __all__ = ['Estimator']
 
 class Estimator:
-    def __init__(self, net, metric = metric.RMSE(), loss= gluon.loss.SoftmaxCrossEntropyLoss()):
+    def __init__(self, net, metric = [metric.RMSE()], loss= gluon.loss.SoftmaxCrossEntropyLoss(), evaluate_every=5):
         self._train_stats = {"lr": [], "epoch": []}
         self.CheckpointHandler = CheckpointHandler(self)
         self.LoggingHandler = LoggingHandler(self)
+        self.MetricHandler= MetricHandler(self)
         self._net = net
         self._epoch = 0
         self._metric= metric
         self._lossfn = loss
-
+        self._evaluate_every= evaluate_every
+        self.y_hat= None
+        self.y= None
+        self.X=None
 
     def plotting_fn(self):
         pass
@@ -57,6 +61,20 @@ class Estimator:
         label = gluon.utils.split_and_load(batch.label[0], ctx_list=ctx, batch_axis=0)
         return data, label
 
+    def evaluate_loss_and_metric(self, dataloader):
+        for (i,batch) in enumerate(dataloader):
+            X= batch.data
+            y= batch.label
+            y_pred = self._net(X)
+            ##replace this with custom function just as discussed
+            ## Also update val_loss thing
+            self._metric.update(y_pred,y)
+        metric_eval= self._metric.get_name_value()
+        for name, val in metric_eval:
+            self._train_stats['val_'+str(name)].append(val)
+        return metric_eval
+
+
     def fit(self, train_data_loader, val_data_loader, epochs,
             trainers= None,
             ctx=[Context.default_ctx], additionalHandlers=[], batch_size=64):
@@ -64,16 +82,17 @@ class Estimator:
         #self._metric = train_metric
         if trainers is None:
             trainers = gluon.Trainer(self._net.collect_params(), 'sgd', {'learning_rate': 0.001})
-        EventHandlers = [self.LoggingHandler, self.CheckpointHandler]
+        EventHandlers = [self.LoggingHandler, self.CheckpointHandler, self.MetricHandler]
         EventHandlers = EventHandlers + additionalHandlers
         exit_training = False
         #print(self._metric.get())
         #m_name, m_val =
-        train_metric_name, train_metric_val = zip(*(self._metric.get_name_value()))
-        for m_names in train_metric_name:
-            #print(self._metric.get()[0])
-            #print(m_names)
-            self._train_stats[m_names]=[]
+        #for metrics in self._metric:
+        #    train_metric_name, train_metric_val = zip(*(metrics.get_name_value()))
+        #    for m_names in train_metric_name:
+        #        #print(self._metric.get()[0])
+        #        #print(m_names)
+        #        self._train_stats[m_names]=[]
         for handlers in EventHandlers:
             handlers.train_begin()
 
@@ -82,7 +101,8 @@ class Estimator:
             print(epoch)
             for handlers in EventHandlers:
                 handlers.epoch_begin()
-            self._metric.reset()
+            for metrics in self._metric:
+                metrics.reset()
             if exit_training:
                 break
             for i, batch in enumerate(train_data_loader):
@@ -91,34 +111,39 @@ class Estimator:
                 for handlers in EventHandlers:
                     handlers.batch_begin()
                 #train_l_sum, train_acc_sum, n, start = 0.0, 0.0, 0, time.time()
-                for X, y in train_data_loader:
+                #for X, y in train_data_loader:
                     #X, y = X.as_in_context(ctx), y.as_in_context(ctx)
-                    with autograd.record():
-                        y_hat = self._net(X)
-                        l = self._lossfn(y_hat, y)
-                    l.backward()
-                    trainers.step(batch_size)
-                    y = y.astype('float32')
-                    #train_l_sum += l.asscalar()
-                    #train_acc_sum += (y_hat.argmax(axis=1) == y).sum().asscalar()
-                    #n += y.size
-                    for handlers in EventHandlers:
-                        handlers.batch_end()
+                    #sum =0
+                self.X= batch.data
+                self.y=batch.label
+                with autograd.record():
+                    y_hat = self._net(X)
+                    l= self._lossfn(y_hat, y, weight= None)
 
-                    self._metric.update(y, y_hat)
-                    break
-                    # do something with train_stats
-                    # train_stats.append[] similar to keras history
-                    #test_acc = self.evaluate_accuracy(val_data_loader, net, ctx)
+                l.backward()
+                trainers.step(batch_size)
+                y = y.astype('float32')
+                #train_l_sum += l.asscalar()
+                #train_acc_sum += (y_hat.argmax(axis=1) == y).sum().asscalar()
+                #n += y.size
+                for handlers in EventHandlers:
+                    handlers.batch_end()
+
+                self._metric.update(self.y, self.y_hat)
+                break
+                # do something with train_stats
+                # train_stats.append[] similar to keras history
+                #test_acc = self.evaluate_accuracy(val_data_loader, net, ctx)
                 print("end of batch")
                 break
-            train_metric_name, train_metric_score = self._metric.get()
-            print(train_metric_name)
-            print(train_metric_score)
+            metric_val = metrics.get_name_value()
+            #print(train_metric_name)
+            #print(train_metric_score)
 
             self._train_stats["epoch"].append(epoch)
             self._train_stats["lr"].append(trainers.learning_rate)
-            self._train_stats[train_metric_name].append(train_metric_score)
+            for name, val in metric_val:
+                self._train_stats[name].append(val)
             print(self._train_stats)
             ## how to do this for val
 
@@ -128,6 +153,8 @@ class Estimator:
             #      % (epoch + 1, train_l_sum / n, train_acc_sum / n, train_metric_score,
             #         time.time() - start))
 
+            if self._epoch % self._evaluate_every == 0:
+                self.evaluate_loss_and_metric(val_data_loader)
             for handlers in EventHandlers:
                 print(handlers)
                 handlers.epoch_end()

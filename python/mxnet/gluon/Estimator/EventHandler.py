@@ -135,4 +135,48 @@ class CheckpointHandler(EventHandler):
         #    self._estimator._net.save_parameters('%s/%.4f-imagenet-%s-%d-best.params' % (self.ckpt_loc, best_val_score, self._filename, self._estimator._epoch))
         #    self._estimator._trainer.save_states('%s/%.4f-imagenet-%s-%d-best.states' % (self.ckpt_loc, best_val_score, self._filename, self._estimator._epoch))
 
+class MetricHandler(EventHandler):
+    def __init__(self,estimator):
+        super(MetricHandler,self).__init__(estimator)
+        #self._estimator= estimator
+        # estimator._train_stats = {"lr" : 0.1, "train_acc" : [0.85], "val_acc" :[0.99]}
+        self._metric= estimator._metric
+
+    def train_begin(self):
+        for metrics in self._metric:
+            train_metric_name, train_metric_val = zip(*(metrics.get_name_value()))
+            for m_names in train_metric_name:
+                # print(self._metric.get()[0])
+                # print(m_names)
+                self._estimator._train_stats['train_'+m_names] = []
+                self._estimator._train_stats['val_' + m_names] = []
+    def train_end(self):
+        pass
+
+    def batch_begin(self):
+        pass
+
+    def batch_end(self):
+        ##if mapping doesnt exist raise error size(metrics) not equal to size(labels)
+        self._metric.update(self._estimator.y, self._estimator.y_hat)
+
+    def epoch_begin(self):
+        for metrics in self._metric:
+            metrics.reset()
+
+    def epoch_end(self):
+        print("metrci")
+        metric_val = self._metric.get_name_value()
+        for name, val in metric_val:
+            self._estimator._train_stats[name].append(val)
+        print(self._estimator._train_stats)
+        ##get validation metrics
+        if self._estimator._epoch % self._estimator._evaluate_every == 0:
+            self._estimator.evaluate_loss_and_metric(val_data_loader)
+
+        ##move to earlystopping
+        #if err_top1_val < best_val_score:
+        #    best_val_score = err_top1_val
+        #    self._estimator._net.save_parameters('%s/%.4f-imagenet-%s-%d-best.params' % (self.ckpt_loc, best_val_score, self._filename, self._estimator._epoch))
+        #    self._estimator._trainer.save_states('%s/%.4f-imagenet-%s-%d-best.states' % (self.ckpt_loc, best_val_score, self._filename, self._estimator._epoch))
 
