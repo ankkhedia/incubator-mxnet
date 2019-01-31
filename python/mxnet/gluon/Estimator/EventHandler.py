@@ -177,6 +177,7 @@ class MetricHandler(EventHandler):
     def batch_end(self):
         ##if mapping doesnt exist raise error size(metrics) not equal to size(labels)
         for metrics in self._metric:
+            ##TODO: deal it with a separate update functionsn to take care of mapping metric to outputs- use same for eval
             self._metric.update(self._estimator.y, self._estimator.y_hat)
 
     def epoch_begin(self):

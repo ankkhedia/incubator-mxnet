@@ -118,7 +118,8 @@ class Estimator:
                 self.X= batch.data
                 self.y=batch.label
                 with autograd.record():
-                    y_hat = self._net(X)
+                    y_hat = self._net(self.X)
+                    ##TODO: See how to deal with weights
                     l= self._lossfn(y_hat, self.y, weight= None)
 
                 l.backward()
