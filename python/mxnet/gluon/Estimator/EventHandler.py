@@ -78,7 +78,7 @@ class LoggingHandler(EventHandler):
         train_metric_name, train_metric_val =zip(*(self._estimator._metric.get_name_value()))
         print(train_metric_name)
         for names in train_metric_name:
-            train_metric_score= self._estimator._train_stats[names][-1]
+            train_metric_score= self._estimator._train_stats['train_'+names][-1]
             self.logger.info('[Epoch %d] training: %s=%f' % (self._estimator._epoch, names, train_metric_score))
         print("logged")
         #self.logger.info('[Epoch %d] speed: %d samples/sec\ttime cost: %f' % (self._estimator._epoch, throughput, time.time() - tic))
@@ -104,7 +104,7 @@ class CheckpointHandler(EventHandler):
             train_metric_name, train_metric_val = zip(*(self._estimator._metric.get_name_value()))
 
             for names in train_metric_name:
-                train_metric_score = self._estimator._train_stats[names][-1]
+                train_metric_score = self._estimator._train_stats['train_'+names][-1]
                 self._estimator._net.export('%s/%.4f-best' % (self.ckpt_loc, train_metric_score), self._estimator._epoch)
         else:
             self._estimator._net.save_parameters('%s/imagenet-%d.params' % (self.ckpt_loc,  self._estimator._epoch))
@@ -125,7 +125,7 @@ class CheckpointHandler(EventHandler):
         if (self._estimator._epoch+1)%self._whenToCheckpoint ==0 :
             train_metric_name, train_metric_val = zip(*(self._estimator._metric.get_name_value()))
             for names in train_metric_name:
-                train_metric_score = self._estimator._train_stats[names][-1]
+                train_metric_score = self._estimator._train_stats['train'+names][-1]
                 self._estimator._net.save_parameters('%s/%.4f-imagenet-%s-%d-best.params' % (self.ckpt_loc, train_metric_score, self._filename, self._estimator._epoch))
                 #self._estimator._trainer.save_states('%s/%.4f-imagenet-%s-%d-best.states' % (self.ckpt_loc, train_metric_score, self._filename, self._estimator._epoch))
 
@@ -189,7 +189,7 @@ class MetricHandler(EventHandler):
         for metrics in self._metric:
             metric_val = metrics.get_name_value()
             for name, val in metric_val:
-                self._estimator._train_stats[name].append(val)
+                self._estimator._train_stats['train_'+name].append(val)
 
         ##get validation metrics
         if self._estimator._epoch % self._estimator._evaluate_every == 0:
