@@ -17,7 +17,7 @@
 # pylint: disable=arguments-differ, too-many-lines
 # coding: utf-8
 """Definition of various recurrent neural network cells."""
-__all__ = ['EventHandler','LoggingHandler','CheckpointHandler']
+__all__ = ['EventHandler','LoggingHandler','CheckpointHandler','MetricHandler']
 import logging
 
 
@@ -75,10 +75,11 @@ class LoggingHandler(EventHandler):
 
     def epoch_end(self):
         print("working on logswq")
-        train_metric_name, train_metric_val =zip(*(self._estimator._metric.get_name_value()))
+        train_metric_name= self._estimator._train_stats.keys()
+        #train_metric_name, train_metric_val =zip(*(self._estimator._metric.get_name_value()))
         print(train_metric_name)
         for names in train_metric_name:
-            train_metric_score= self._estimator._train_stats['train_'+names][-1]
+            train_metric_score= self._estimator._train_stats[names][-1]
             self.logger.info('[Epoch %d] training: %s=%f' % (self._estimator._epoch, names, train_metric_score))
         print("logged")
         #self.logger.info('[Epoch %d] speed: %d samples/sec\ttime cost: %f' % (self._estimator._epoch, throughput, time.time() - tic))
@@ -140,13 +141,13 @@ class MetricHandler(EventHandler):
         super(MetricHandler,self).__init__(estimator)
         #self._estimator= estimator
         # estimator._train_stats = {"lr" : 0.1, "train_acc" : [0.85], "val_acc" :[0.99]}
-        self._metric= estimator._metric
+        self._metric= None
         self._valdataloader = None
 
     def evaluate_loss_and_metric(self, dataloader):
         for (i,batch) in enumerate(dataloader):
-            X= batch.data
-            y= batch.label
+            X= batch[0]
+            y= batch[1]
             y_pred = self._estimator._net(X)
             ##replace this with custom function just as discussed
             ## Also update val_loss things
@@ -161,6 +162,7 @@ class MetricHandler(EventHandler):
         return
 
     def train_begin(self):
+        self._metric= self._estimator._metric
         for metrics in self._metric:
             train_metric_name, train_metric_val = zip(*(metrics.get_name_value()))
             for m_names in train_metric_name:
@@ -178,7 +180,7 @@ class MetricHandler(EventHandler):
         ##if mapping doesnt exist raise error size(metrics) not equal to size(labels)
         for metrics in self._metric:
             ##TODO: deal it with a separate update functionsn to take care of mapping metric to outputs- use same for eval
-            self._metric.update(self._estimator.y, self._estimator.y_hat)
+            metrics.update(self._estimator.y, self._estimator.y_hat)
 
     def epoch_begin(self):
         for metrics in self._metric:
@@ -193,7 +195,7 @@ class MetricHandler(EventHandler):
 
         ##get validation metrics
         if self._estimator._epoch % self._estimator._evaluate_every == 0:
-            self._estimator.evaluate_loss_and_metric(self._estimator._val_data_loader)
+            self.evaluate_loss_and_metric(self._valdataloader)
 
         ##move to earlystopping
         #if err_top1_val < best_val_score:

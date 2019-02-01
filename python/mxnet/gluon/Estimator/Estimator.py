@@ -34,10 +34,10 @@ class Estimator:
         self._train_stats = {"lr": [], "epoch": []}
         self.CheckpointHandler = CheckpointHandler(self)
         self.LoggingHandler = LoggingHandler(self)
-        self.MetricHandler= MetricHandler(self)
+        self.MetricHandler = MetricHandler(self)
         self._net = net
         self._epoch = 0
-        self._metric= metric
+        self._metric = metric
         self._lossfn = loss
         self._evaluate_every= evaluate_every
         self.y_hat= None
@@ -57,8 +57,8 @@ class Estimator:
     #   return acc_sum.asscalar() / n
 
     def _batch_fn(self,batch, ctx):
-        data = gluon.utils.split_and_load(batch.data[0], ctx_list=ctx, batch_axis=0)
-        label = gluon.utils.split_and_load(batch.label[0], ctx_list=ctx, batch_axis=0)
+        data = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0)
+        label = gluon.utils.split_and_load(batch[1], ctx_list=ctx, batch_axis=0)
         return data, label
 
     #def evaluate_loss_and_metric(self, dataloader):
@@ -82,7 +82,7 @@ class Estimator:
         #self._metric = train_metric
         if trainers is None:
             trainers = gluon.Trainer(self._net.collect_params(), 'sgd', {'learning_rate': 0.001})
-        EventHandlers = [self.LoggingHandler, self.CheckpointHandler, self.MetricHandler]
+        EventHandlers = [self.MetricHandler, self.LoggingHandler, self.CheckpointHandler]
         self.MetricHandler._valdataloader= val_data_loader
         EventHandlers = EventHandlers + additionalHandlers
         exit_training = False
@@ -107,7 +107,7 @@ class Estimator:
             if exit_training:
                 break
             for i, batch in enumerate(train_data_loader):
-                #data, label = self._batch_fn(batch, ctx)
+                data, label = self._batch_fn(batch, ctx)
                 print("inside batch")
                 for handlers in EventHandlers:
                     handlers.batch_begin()
@@ -115,16 +115,16 @@ class Estimator:
                 #for X, y in train_data_loader:
                     #X, y = X.as_in_context(ctx), y.as_in_context(ctx)
                     #sum =0
-                self.X= batch.data
-                self.y=batch.label
+                self.X= data
+                self.y= label
                 with autograd.record():
-                    y_hat = self._net(self.X)
+                    self.y_hat = [self._net(x) for x in self.X]
                     ##TODO: See how to deal with weights
-                    l= self._lossfn(y_hat, self.y, weight= None)
-
-                l.backward()
+                    loss= [self._lossfn(y_pred, y_label) for y_pred, y_label in zip(self.y_hat,self.y)]
+                for l in loss:
+                    l.backward()
                 trainers.step(batch_size)
-                y = y.astype('float32')
+                #y = y.astype('float32')
                 #train_l_sum += l.asscalar()
                 #train_acc_sum += (y_hat.argmax(axis=1) == y).sum().asscalar()
                 #n += y.size
